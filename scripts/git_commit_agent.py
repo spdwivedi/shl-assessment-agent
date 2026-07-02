@@ -5,8 +5,12 @@ import requests
 
 def get_staged_diff():
     try:
-        # Pulls the exact code modifications staged for the commit
-        diff = subprocess.check_output(["git", "diff", "--cached"], text=True)
+        # Force UTF-8 encoding and gracefully replace unmappable bytes to avoid Windows crashes
+        diff = subprocess.check_output(
+            ["git", "diff", "--cached"], 
+            encoding="utf-8", 
+            errors="replace"
+        )
         return diff
     except Exception as e:
         print(f"Error fetching git diff: {e}")
@@ -18,7 +22,6 @@ def generate_commit_message(diff_content):
         print("CRITICAL: GEMINI_API_KEY environment variable is missing.")
         return "chore: incremental update (Gemini API Key missing)"
 
-    # Targeting the high-velocity, low-latency Gemini 3.1 Flash Lite model
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key={api_key}"
     
     prompt = f"""
@@ -49,6 +52,16 @@ Staged Code Changes:
     try:
         response = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
         response_json = response.json()
+        
+        # 🔍 NEW: Catch structural server-side errors immediately
+        if "error" in response_json:
+            print(f"❌ Google API Server Error ({response.status_code}): {response_json['error'].get('message')}")
+            return "chore: automated code checkpoint updates"
+            
+        if "candidates" not in response_json:
+            print(f"⚠️ Unexpected Response Layout: {response_json}")
+            return "chore: automated code checkpoint updates"
+
         commit_text = response_json['candidates'][0]['content']['parts'][0]['text'].strip()
         return commit_text
     except Exception as e:
