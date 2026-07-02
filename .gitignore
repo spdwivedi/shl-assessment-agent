@@ -1,0 +1,14 @@
+# Python virtual environments (ignores both styles)
+venv/
+.venv/
+py312/
+__pycache__/
+*.pyc
+
+# RAG Database Indices (Keep local)
+data_store/
+*.npy
+*.pkl
+
+# System Configurations & Keys
+.env

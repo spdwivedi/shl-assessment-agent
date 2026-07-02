@@ -1,0 +1,11 @@
+# Workspace Rules for SHL RAG Agent Project
+
+You are the Primary Coding Engine running on Gemini Pro. You must maintain structural integrity and record changes.
+Whenever you create a new file, modify existing logic, or fix a structural bug:
+1. Immediately use your file-writing tool to append a clean, structured entry to the end of `CHANGELOG_AI.md`.
+2. Format each entry as follows:
+   ### [YYYY-MM-DD HH:MM] - File: `path/to/file.py`
+   - **Intent:** Short description of why this change was introduced.
+   - **Logic Implemented:** Details of functions/classes added.
+   - **RAG/Architectural Impact:** How this maintains schema compliance or improves retrieval accuracy.
+3. Perform this log update autonomously without prompting the user for confirmation.
