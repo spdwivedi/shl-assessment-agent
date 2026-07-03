@@ -1,0 +1,342 @@
+# 🤖 SHL Conversational Assessment Recommender Agent
+
+An enterprise-grade, high-performance conversational AI agent and Retrieval-Augmented Generation (RAG) platform. This system seamlessly transitions hiring managers and recruiters from an initial vague intent to a completely verified, trace-aligned shortlist of SHL individual test solutions through dynamic multi-turn dialogue.
+
+---
+
+### 🌐 Professional & Deployment Links
+* **👨‍💻 Personal Portfolio:** [spdwivedi.me](https://spdwivedi.me)
+* **💼 LinkedIn Profile:** [linkedin.com/in/spdwivedi](https://www.linkedin.com/in/spdwivedi)
+* **💻 GitHub Repository:** [github.com/spdwivedi/shl-assessment-agent](https://github.com/spdwivedi/shl-assessment-agent)
+* **🚀 Deployed Live Dashboard:** [http://convo-agent.spdwivedi.me:8002](http://convo-agent.spdwivedi.me:8002)
+* **💾 Swagger API Interactive Specs:** [http://convo-agent.spdwivedi.me:8002/docs](http://convo-agent.spdwivedi.me:8002/docs)
+
+---
+
+## 🛠️ Architecture & Algorithmic Engineering
+
+The application is engineered on top of a production-ready, fully stateless architectural design pattern. Because the system retains zero server-side cache state across threads, it is inherently scalable and resilient against parallel query collisions.
+
+```
+       +--------------------------------------------------------+
+       | Stateless Request Payload (Full Message History JSON)  |
+       +----------------------------+---------------------------+
+                                    |
+                                    v
+                 +------------------+------------------+
+                 |    STEP 1: Extraction & Routing     |
+                 |      (Gemini 3.1 Flash Lite)        |
+                 +------------------+------------------+
+                                    |
+            +-----------------------+-----------------------+
+            |                       |                       |
+            v                       v                       v
+     [Intent: REFUSE]       [Intent: CLARIFY]       [Intent: SEARCH]
+            |                       |                       |
+            |                       |                       v
+            |                       |           +-----------+-----------+
+            |                       |           |   HYBRID RETRIEVAL    |
+            |                       |           |   (Dense + Lexical)   |
+            |                       |           +-----------+-----------+
+            |                       |                       |
+            |                       |                       v
+            |                       |           +-----------+-----------+
+            |                       |           |  Rank Fusion & Gating |
+            |                       |           |  (RRF Matrix Blend)   |
+            |                       |           +-----------+-----------+
+            |                       |                       |
+            +-----------------------+-----------------------+
+                                    |
+                                    v
+                 +------------------+------------------+
+                 |    STEP 2: Conversational Synthesis |
+                 |       (Grounded Context Response)   |
+                 +------------------+------------------+
+                                    |
+                                    v
+       +----------------------------+---------------------------+
+       |   Stateless JSON Response (Reply + Shortlist Object)   |
+       +--------------------------------------------------------+
+```
+
+### 1. Decoupled Two-Step Agentic Chain
+To guarantee deterministic execution and absolute elimination of out-of-catalog product hallucinations, the model processing pipeline is explicitly broken into two isolated orchestration frames:
+* **Step 1: Parameter & Intent Parsing:** Evaluates the complete, raw historical dialogue array using `models/gemini-3.1-flash-lite` bound to a hyper-rigid temperature parameter ($0.1$). It extracts intent routing tokens (`refuse` | `clarify` | `search`), prunes negative modifiers or conversational noise, maps abstract seniority level inputs, and aggregates clean text keyword tokens for the database query layer.
+* **Step 2: Conversational Context Synthesis:** Takes the structured outputs generated from the retrieval engine, hooks them into a strict ground-truth injection prompt, and shapes a natural, professional response. If the intent state is locked into a clarification layer, the model is physically restricted from accessing catalog product strings, eliminating any chance of pre-search hallucination.
+
+### 2. Dense Vector Semantic Retrieval
+Catalog records are parsed, cleaned, and embedded using **`gemini-embedding-001`**. This forms dense $768$-dimensional floating-point representation matrices that capture semantic proximity. During execution, inbound query strings are embedded in real time, and cosine similarity values are generated by executing normalized matrix dot-products against the pre-compiled catalog embeddings layer:
+
+$$Cosine\_Similarity(\vec{q}, \vec{d}) = \frac{\vec{q} \cdot \vec{d}}{\|\vec{q}\| \|\vec{d}\|}$$
+
+### 3. Sparse Lexical Token Matching (Okapi BM25)
+To protect the search layer against standard vector semantic drift—where exact tech-stack keywords like *Spring*, *Docker*, or *SQL* can blend into generic engineering definitions—the application passes token arrays through an Okapi BM25 sparse inverse document frequency index matrix. This guarantees that direct product names and explicit framework keywords receive a heavy lexical scoring premium.
+
+### 4. Reciprocal Rank Fusion (RRF) & Query Expansion
+To reconcile the divergent score scales of dense cosine boundaries and unbound BM25 lexical weights, the system implements a **Reciprocal Rank Fusion (RRF)** matrix blending layer. A smoothing constant ($k = 60$) protects the system from rank tie-breaking biases. 
+
+Furthermore, to resolve the vocabulary mismatch paradox where general queries (e.g., *"technical coding test"*) return no direct keyword hits against specific asset names (e.g., `Automata`), an autonomous **Query Expansion Layer** appends corresponding taxonomy synonyms (*"programming concepts, coding, automata, live coding"*) seamlessly behind the scenes.
+
+$$RRF\_Score(d \in D) = \sum_{m \in M} \frac{1}{k + r_m(d)}$$
+
+Where $M$ represents the retrieval model cluster (Lexical and Vector), and $r_m(d)$ represents the specific ordinal rank assigned to document $d$ by model $m$.
+
+---
+
+## 📂 Comprehensive Project File Registry
+
+### Core Application Directory (`app/`)
+* **`app/main.py`** The main entry point for the web server application. It configures global Cross-Origin Resource Sharing (CORS) middlewares to support cross-lane client fetching, instantiates the core agent recommender loop, exposes the system health check probes, and serves the dark-themed Tailwind CSS interactive evaluation interface directly via a root HTML response endpoint.
+* **`app/core_agent.py`** The primary coordinator for the multi-turn agent pipeline. It marshals message logs into clean dialogue blocks, manages the low-temperature parameter extractor, coordinates conditional retrieval executions, and runs the grounded conversational synthesis prompt layer.
+* **`app/search_engine.py`** The mathematical retrieval core. It initializes sparse and dense components into memory cache, executes real-time Gemini matrix query embeddings, runs BM25 lexical scoring, performs the RRF blending sequence, and runs multi-token demographic validation filters.
+* **`app/schemas.py`** Defines strict Pydantic v2 schemas (`ChatRequest`, `ChatResponse`, `Message`, `Recommendation`). This guarantees strict compliance with the automated validation harness.
+
+### Execution & Tooling Scripts (`scripts/`)
+* **`scripts/init_db.py`** The offline ingestion asset. It reads the raw JSON product catalog datasets, applies strict entity validation checks, filters items down to 377 valid entries, generates 768-dimensional token vector matrices using the Gemini SDK, compiles the localized BM25 inverse text arrays, and pickles the binary artifacts to the local directory disk space.
+* **`scripts/test_agent.py`** The offline local evaluation replay simulator. It loops through a multi-turn chat interaction scenario over network loops, maps real-time agent JSON payloads, and prints terminal logs to verify schema compliance and trace integrity before cloud deployment.
+
+---
+
+## ☁️ Cloud Infrastructure & Production Topology
+
+The application is deployed on a dedicated, high-availability Linux Compute Instance hosted on **Oracle Cloud Infrastructure (OCI)**.
+
+```
+                  +-----------------------------------+
+                  |      PUBLIC INTERNET TRAFFIC      |
+                  +-----------------+-----------------+
+                                    |
+                                    v [Port 8002]
+                  +-----------------+-----------------+
+                  |      OCI Ingress Virtual Cloud    |
+                  |         Network Firewall          |
+                  +-----------------+-----------------+
+                                    |
+                                    v
+                  +-----------------+-----------------+
+                  |      Linux Host firewalld Layer   |
+                  +-----------------+-----------------+
+                                    |
+                                    v
+                  +-----------------+-----------------+
+                  |      Detached User Space Daemon   |
+                  |     (Uvicorn Cluster - 2 Workers) |
+                  +-----------------------------------+
+```
+
+### Bypassing Security & SELinux Policies
+By default, Oracle Linux configurations enforce a strict SELinux policy template that completely blocks the system kernel layer (`systemd`) from executing binaries located deep within unprivileged user space paths (`/home/opc/...`), throwing a severe `203/EXEC` folder trap. 
+
+To overcome this roadblock and keep development unblocked, the system bypasses the systemd abstraction entirely. The application daemonizes directly into the unprivileged user-space memory table by establishing an un-hung background execution cluster managed by a detached `nohup` process pipeline.
+
+### Production Execution Script
+To safely pull repository patches, clean system port conflicts, and launch the multi-worker production cluster, use these sequential commands:
+```bash
+# 1. Access the working directory
+cd /home/opc/shl-assessment-agent
+
+# 2. Pull down production-ready code blocks from the repository
+git pull
+
+# 3. Locate and purge previous port allocations to prevent binding clashes
+bak_pid=$(ss -tulnp | grep :8002 | awk '{print $7}' | cut -d',' -f2 | sed 's/pid=//' | head -n 1)
+if [ ! -z "$bak_pid" ]; then kill -9 $bak_pid; fi
+
+# 4. Boot up the multi-worker background cluster daemon bound to Port 8002
+nohup ./venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8002 --workers 2 > uvicorn.log 2>&1 &
+```
+
+---
+
+## 🚀 Production API Endpoints Specification
+
+### 1. System Readiness Diagnostics Probe
+* **Path:** `GET /health`
+* **Header Response Status:** `HTTP 200 OK`
+* **JSON Payload:**
+```json
+{
+  "status": "ok"
+}
+```
+
+### 2. Multi-Turn Stateless Chat Transaction
+* **Path:** `POST /chat`
+* **Content-Type:** `application/json`
+* **JSON Request Body Sample:**
+```json
+{
+  "messages": [
+    { "role": "user", "content": "I need an assessment solution for hiring a software engineer." },
+    { "role": "assistant", "content": "Sure! Could you tell me what seniority level or language framework you want to target?" },
+    { "role": "user", "content": "Mid-level, around 4 years of experience, testing coding tests specifically." }
+  ]
+}
+```
+* **JSON Response Body Sample:**
+```json
+{
+  "reply": "Understood. For a mid-level software engineer role focused strictly on technical coding proficiency, I recommend our Automata suite. These assessments evaluate real-world coding skills and technical problem-solving.",
+  "recommendations": [
+    {
+      "name": "Programming Concepts",
+      "url": "[https://www.shl.com/products/product-catalog/view/programming-concepts/](https://www.shl.com/products/product-catalog/view/programming-concepts/)",
+      "test_type": "K"
+    },
+    {
+      "name": "Smart Interview Live Coding",
+      "url": "[https://www.shl.com/products/product-catalog/view/smart-interview-live-coding/](https://www.shl.com/products/product-catalog/view/smart-interview-live-coding/)",
+      "test_type": "K"
+    },
+    {
+      "name": "Automata (New)",
+      "url": "[https://www.shl.com/products/product-catalog/view/automata-new/](https://www.shl.com/products/product-catalog/view/automata-new/)",
+      "test_type": "S"
+    }
+  ],
+  "end_of_conversation": false
+}
+```
+
+---
+
+## 🖥️ Single-Page Frontend Dashboard Interface
+
+The application serves a complete single-page interactive dashboard straight from the root path (`/`). Crafted with **Tailwind CSS** and optimized with an explicit dark aesthetic, it features:
+
+1. **Architecture Telemetry Panels:** Provides real-time metrics tracking the active AI model configurations, matrix norm properties, and index catalog size boundaries.
+2. **Automated Replay Terminal Log Simulator:** An embedded console emulator that runs asynchronous event loops. Clicking **"Execute Verification Trace Run"** triggers a localized validation sequence, printing user payloads, agent responses, and dynamic recommendation cards to verify real-time system performance.
+3. **Live Dynamic Chat Agent Container:** An interactive chat UI that provides direct access to the live pipeline. Users can test complex dialogue flows, multi-letter test-type transformations (`A,S`, `P,C`), and compliance blockers (e.g., legal or HR queries) under real-world conditions.
+
+---
+
+## 🤖 AI Co-Pilot & Development Tooling Disclosure
+
+This project was built with the assistance of advanced artificial intelligence code assistants and automated orchestration models:
+
+* **Cline Extension Engine:** Integrated with `gemini-3.1-flash-lite` to safely edit codebase repositories, execute terminal shell status checks, track network loop performance, and resolve complex vector lookup discrepancies.
+* **Autonomous Version Control Profilers:** Used AI generation models to inspect file diff changes, format clear commit notations, and maintain an organized project history.
+
+---
+
+## 📥 Local Installation & Database Initialization Guide
+
+Follow this comprehensive guide to set up the RAG environment, compile the sparse and dense indexing matrices, and launch the application platform directly on your local workstation.
+
+### 1. Prerequisites & Environment Alignment
+Ensure you have Python 3.12+ installed on your system. Clone the codebase and configure an isolated virtual environment to prevent package collision:
+
+```bash
+# Clone the repository matrix
+git clone [https://github.com/spdwivedi/shl-assessment-agent.git](https://github.com/spdwivedi/shl-assessment-agent.git)
+cd shl-assessment-agent
+
+# Create and trigger the virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows use: .\venv\Scripts\activate
+
+# Upgrade pip and install core system requirements
+pip install --upgrade pip
+pip install fastapi uvicorn google-generativeai rank-bm25 numpy pydantic
+```
+
+### 2. Standard Environment Variable Provisioning
+The underlying embedding and inference pipelines require authentication with the Google GenAI API platform. Secure your runtime session by exporting your active credential token:
+
+```bash
+# Linux/macOS Session Export
+export GEMINI_API_KEY="AIzaSyYourActualAPIKeyHere..."
+
+# Windows PowerShell Session Export
+$env:GEMINI_API_KEY="AIzaSyYourActualAPIKeyHere..."
+
+# Windows Command Prompt Session Export
+set GEMINI_API_KEY=AIzaSyYourActualAPIKeyHere...
+```
+
+### 3. Executing the Catalog Compilation Pipeline
+Before booting the FastAPI worker layer, run the offline processing script to parse the raw inventory JSON, generate 768-dimensional token vectors, build the BM25 inverse keyword indices, and cache the compiled binary layers to the disk:
+
+```bash
+# Run the database matrix initialization hook
+python scripts/init_db.py
+```
+
+**Expected Console Compilation Diagnostics:**
+```text
+Reading raw catalog data streams...
+Filtering entries down to active evaluation targets...
+Invoking gemini-embedding-001 dense vector generation loops...
+Tokenizing fields and compiling Okapi BM25 index matrix...
+Writing serialized binary structures to storage segments...
+✅ Search memory loaded with 377 candidate assessments.
+```
+
+### 4. Running the Local Test Runner Replay
+Validate your local runtime configurations and test multi-turn agent response routing rules using the built-in offline test simulator script:
+
+```bash
+python scripts/test_agent.py
+```
+
+---
+
+## 🔍 Troubleshooting & System FAQ
+
+This section covers common operational exceptions, port binding collisions, and validation failures across both local and OCI cloud container runtimes.
+
+### 1. Address Already in Use (`OSError: [Errno 98] EADDRINUSE`)
+* **Symptom:** The Uvicorn worker fails to launch and crashes with a port binding exception.
+* **Cause:** A ghost process or background worker from a previous deployment run is still actively holding the port allocation (`8002` or `8000`).
+* **Resolution:** Run the process cleanup filter directly from your session terminal to forcefully drop the existing listener:
+  ```bash
+  # Pinpoint the PID holding port 8002 and terminate it cleanly
+  bak_pid=$(ss -tulnp | grep :8002 | awk '{print $7}' | cut -d',' -f2 | sed 's/pid=//' | head -n 1)
+  if [ ! -z "$bak_pid" ]; then kill -9 $bak_pid; fi
+  ```
+
+### 2. Empty Recommendations Array Returned (`recommendations: []`)
+* **Symptom:** Conversational turns targeting verified domains return empty shortlist payloads instead of catalog matches.
+* **Cause:** The current conversational exchange trace is triggering a `CLARIFY` or `REFUSE` behavioral gate, or the extraction filter passed negative terms directly into the hybrid indexes.
+* **Resolution:** Ensure the context matches a standard `SEARCH` configuration. Check that the search query contains clear domain identifiers and that requirements aren't blocked by intermediate compliance checks (e.g., legal, HR advice).
+
+### 3. Missing Data Store Artifacts (`FileNotFoundError`)
+* **Symptom:** The FastAPI application layer crashes immediately during startup with a missing `.pkl` or `.npy` matrix allocation log.
+* **Cause:** The vector and lexical indexing storage matrices have not yet been compiled from the raw inventory catalog files.
+* **Resolution:** Execute the base offline compile engine script before running your web server process worker:
+  ```bash
+  python scripts/init_db.py
+  ```
+
+### 4. Vector Generation Timeouts or Network Drops
+* **Symptom:** The initialization database compilation script stalls or drops connection segments unexpectedly.
+* **Cause:** The session environment variable `GEMINI_API_KEY` is either missing, expired, or hitting active rate limit thresholds on your network lane.
+* **Resolution:** Verify your API authentication variable footprint by running a simple test command:
+  ```bash
+  # Print the current active API token key environment status
+  echo $GEMINI_API_KEY
+  ```
+
+---
+
+## 📊 Appendix: Trace Evaluation & Persona Compliance Matrix
+
+To ensure the agent functions perfectly under strict automated testing conditions, the orchestration engine has been evaluated against multiple behavioral test trajectories. The table below outlines how the system natively manages these complex conversational shifts:
+
+| Evaluation Persona / Trace ID | Core Target Focus Area | Intermediate Guardrail Behavior | Final Shortlist Commitment Rule |
+| :--- | :--- | :--- | :--- |
+| **Trace C1 - C2** | Technical Role Clarifications | Suppresses all active products (`[]`) while roles or seniority scopes remain unstated. | Surfaces general development concept arrays upon full parameter locking. |
+| **Trace C3** | High-Volume Inbound Contact Centers | Enforces a multi-turn discovery chain requiring explicit **Language** and **Regional Accent** inputs. | Surfaces exact language-locked tools like `SVAR Spoken English` and call simulations. |
+| **Trace C4 - C5** | Leadership & Management Scenarios | Captures behavioral/strategic parameters, filtering out low-level technical knowledge metrics. | Maps directly to `Management Scenarios` or `Executive Scenarios` situational tests. |
+| **Trace C6** | Heavy Industrial & Chemical Facilities | Explains structural line metrics natively when asked variations between bundles, hiding product lists. | Commits strictly to `Safety & Dependability 8.0` and hazard identification tools. |
+| **Trace C7** | Healthcare & Administration Data Privacy | Detects legal compliance questions immediately and returns a strict **REFUSE** routing token. | Clears all recommendation arrays completely to protect legal boundaries. |
+| **Trace C8 - C10** | Technical Stack Conversational Negation | Prunes negative qualifiers (e.g., *"not behavioral"*) from polluting the text retrieval filters. | Dynamically appends programming synonyms via the query expansion layer. |
+
+---
+
+## 📄 License & Attribution
+
+This platform is engineered and maintained by **Surya Prakash Dwivedi** as part of an advanced AI application architecture showcase. 
+
+All product names, descriptions, assets, and documentation links related to the test solutions are the property of **SHL Labs**. This software is intended strictly for educational simulation, technical architecture review, and deployment verification purposes.
+```
