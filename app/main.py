@@ -1,5 +1,6 @@
 import os
-from fastapi import FastAPI, Request
+from typing import Optional
+from fastapi import FastAPI, Request, Header
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.schemas import ChatRequest, ChatResponse
@@ -23,8 +24,12 @@ def health_check():
     return {"status": "ok"}
 
 @app.post("/chat", response_model=ChatResponse)
-def chat_endpoint(payload: ChatRequest):
-    return agent.process_chat(payload.messages)
+def chat_endpoint(payload: ChatRequest, x_gemini_api_key: Optional[str] = Header(None)):
+    """
+    Stateless conversational router. Automatically intercepts custom X-Gemini-API-Key 
+    headers to guarantee concurrent multi-tenant isolation.
+    """
+    return agent.process_chat(payload.messages, user_api_key=x_gemini_api_key)
 
 @app.get("/", response_class=HTMLResponse)
 def serve_dashboard():
@@ -64,7 +69,7 @@ def serve_dashboard():
                         <span class="px-2.5 py-1 text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full flex items-center gap-1.5">
                             <span class="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse"></span> Live Production
                         </span>
-                        <span class="text-xs text-slate-400">v2.1 (Trace Aligned)</span>
+                        <span class="text-xs text-slate-400">v2.2 (Header Proxy Enabled)</span>
                     </div>
                     <h1 class="text-2xl md:text-3xl font-bold tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent mt-1">
                         SHL Conversational Assessment Recommender
@@ -84,6 +89,29 @@ def serve_dashboard():
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
                 
                 <div class="lg:col-span-4 space-y-6">
+                    <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl ring-1 ring-blue-500/10">
+                        <h2 class="text-md font-semibold text-white mb-2 flex items-center gap-2">
+                            🔑 Multi-Tenant Key Allocation
+                        </h2>
+                        <p class="text-slate-400 text-[11px] mb-3 leading-relaxed">
+                            If the system environment key matches rate-limits or falls back, supply your private token credential below.
+                        </p>
+                        <div class="space-y-3">
+                            <input id="custom-key-input" type="password" placeholder="Paste Gemini Key (AIzaSy...)" class="w-full bg-slate-950 border border-slate-800 focus:border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-slate-100 outline-none transition duration-150">
+                            <div class="grid grid-cols-2 gap-2">
+                                <button onclick="commitCustomKey()" class="w-full py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-md text-[11px] font-medium transition duration-150">
+                                    💾 Attach Token
+                                </button>
+                                <button onclick="flushCustomKey()" class="w-full py-1.5 bg-rose-950/20 hover:bg-rose-950/40 text-rose-400 border border-rose-900/30 rounded-md text-[11px] font-medium transition duration-150">
+                                    🗑️ Reset Default
+                                </button>
+                            </div>
+                            <div id="key-status-indicator" class="text-[10px] text-slate-500 font-mono text-center pt-1">
+                                Status: Utilizing System Environment Default Key
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl">
                         <h2 class="text-md font-semibold text-white mb-4 flex items-center gap-2">
                             ⚙️ Architecture Telemetry
@@ -182,7 +210,7 @@ def serve_dashboard():
                     </div>
 
                 </div>
-            </div>
+            </header>
         </div>
 
         <div id="about-modal" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -246,16 +274,58 @@ def serve_dashboard():
         </div>
 
         <script>
-            // Stateful Conversation Tracking Variable
             let activeMessages = [];
+
+            // UI Initial State Synchronizer
+            document.addEventListener("DOMContentLoaded", () => {
+                const activeKey = sessionStorage.getItem("CUSTOM_GEMINI_KEY");
+                const indicator = document.getElementById("key-status-indicator");
+                const inputField = document.getElementById("custom-key-input");
+                
+                if (activeKey) {
+                    indicator.innerText = "Status: Utilizing Active Custom Session Key 🔒";
+                    indicator.className = "text-[10px] text-emerald-400 font-mono text-center pt-1 font-semibold";
+                    inputField.value = activeKey;
+                }
+            });
+
+            function commitCustomKey() {
+                const keyVal = document.getElementById("custom-key-input").value.trim();
+                const indicator = document.getElementById("key-status-indicator");
+    
+                // Updated validation: Accepts standard AIzaSy keys, new AQ. keys, and generic secure tokens
+                if(!keyVal || (!keyVal.startsWith("AIzaSy") && !keyVal.startsWith("AQ.") && keyVal.length < 20)) {
+                    alert("Please insert a valid, authenticated Gemini API Token String.");
+                    return;
+                }
+                sessionStorage.setItem("CUSTOM_GEMINI_KEY", keyVal);
+                indicator.innerText = "Status: Utilizing Active Custom Session Key 🔒";
+                indicator.className = "text-[10px] text-emerald-400 font-mono text-center pt-1 font-semibold";
+                alert("Custom Session Token successfully attached.");
+            }
+
+            function flushCustomKey() {
+                const indicator = document.getElementById("key-status-indicator");
+                document.getElementById("custom-key-input").value = "";
+                sessionStorage.removeItem("CUSTOM_GEMINI_KEY");
+                indicator.innerText = "Status: Utilizing System Environment Default Key";
+                indicator.className = "text-[10px] text-slate-500 font-mono text-center pt-1";
+                alert("Session context flushed. Reverted to Server Environment Defaults.");
+            }
+
+            function getActiveHeaders() {
+                const headers = { 'Content-Type': 'application/json' };
+                const customKey = sessionStorage.getItem("CUSTOM_GEMINI_KEY");
+                if (customKey) {
+                    headers['X-Gemini-API-Key'] = customKey;
+                }
+                return headers;
+            }
 
             function toggleAboutModal(show) {
                 const modal = document.getElementById('about-modal');
-                if (show) {
-                    modal.classList.remove('hidden');
-                } else {
-                    modal.classList.add('hidden');
-                }
+                if (show) modal.classList.remove('hidden');
+                else modal.classList.add('hidden');
             }
 
             function switchTab(target) {
@@ -296,7 +366,7 @@ def serve_dashboard():
                 btn.innerText = "Processing Trace Replay Loop...";
                 
                 const screen = document.getElementById('terminal-screen');
-                screen.innerHTML = ""; // Clear baseline configurations
+                screen.innerHTML = "";
                 
                 const traceTurns = [
                     "I need an assessment solution for hiring a software engineer.",
@@ -315,7 +385,7 @@ def serve_dashboard():
                     try {
                         let response = await fetch('/chat', {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: getActiveHeaders(), // ◄── Appends client-supplied headers if present
                             body: JSON.stringify({ messages: simulatedHistory })
                         });
                         let data = await response.json();
@@ -333,15 +403,12 @@ def serve_dashboard():
                         }
                         
                         appendTerminalLine(`🛑 End Conversation Flag: ${data.end_of_conversation}`, 'agent');
-                        
-                        // Commit response back to history tracking arrays to hold stateless loop balance
                         simulatedHistory.push({"role": "assistant", "content": data.reply});
                         
                     } catch (err) {
                         appendTerminalLine(`❌ API Loop Connection Clashed: ${err}`, 'user');
                     }
                     
-                    // Controlled delay loop intervals to watch text generation visually
                     await new Promise(r => setTimeout(r, 1200));
                 }
                 
@@ -363,29 +430,25 @@ def serve_dashboard():
                 const chatScreen = document.getElementById('chat-screen');
                 const loader = document.getElementById('chat-loader');
                 
-                // 1. Render User message element
                 const userDiv = document.createElement('div');
                 userDiv.className = "flex gap-3 bg-slate-900 p-3.5 border border-slate-800/40 rounded-xl justify-end text-right";
                 userDiv.innerHTML = `<div><div class="font-semibold text-amber-400 mb-1">You (Recruiter)</div><p class="text-slate-300">${txt}</p></div><span class="text-lg">👤</span>`;
                 chatScreen.appendChild(userDiv);
                 chatScreen.scrollTop = chatScreen.scrollHeight;
                 
-                // Commit to active log cache
                 activeMessages.push({"role": "user", "content": txt});
                 loader.classList.remove('hidden');
                 
-                // 2. Transmit to server backend API
                 try {
                     let response = await fetch('/chat', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: getActiveHeaders(), // ◄── Appends client-supplied headers if present
                         body: JSON.stringify({ messages: activeMessages })
                     });
                     let data = await response.json();
                     
                     loader.classList.add('hidden');
                     
-                    // 3. Render Agent Output Component
                     const agentDiv = document.createElement('div');
                     agentDiv.className = "flex gap-3 bg-slate-800/20 p-3.5 border border-slate-800/60 rounded-xl";
                     
@@ -415,8 +478,6 @@ def serve_dashboard():
                     innerContent += `</div>`;
                     agentDiv.innerHTML = innerContent;
                     chatScreen.appendChild(agentDiv);
-                    
-                    // Append back to complete historical pipeline track
                     activeMessages.push({"role": "assistant", "content": data.reply});
                     
                 } catch(err) {

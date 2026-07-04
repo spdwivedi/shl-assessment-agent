@@ -3,8 +3,8 @@ import requests
 import json
 
 # Local endpoint targeting our active FastAPI application
-API_URL = "http://127.0.0.1:8000/chat"
-#API_URL = "http://convo-agent.spdwivedi.me:8002/chat"
+#API_URL = "http://127.0.0.1:8000/chat"
+API_URL = "http://convo-agent.spdwivedi.me:8002/chat"
 
 def simulate_multi_turn_scenario():
     print("🎭 Initiating Multi-Turn Agent Evaluation Replay Simulator...\n")
